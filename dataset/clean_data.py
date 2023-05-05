@@ -14,6 +14,9 @@ columns_to_keep = [
 ]
 df = df[columns_to_keep]
 
+# Split the 'engine_compression' column using ':' as the separator, and keep only the first part (index 0)
+df['engine_compression'] = df['engine_compression'].str.split(':').str.get(0)
+
 # Print the number of items before cleaning
 print("Number of items before cleaning:", df.shape[0])
 
