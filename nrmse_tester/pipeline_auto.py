@@ -7,14 +7,14 @@ import csv
 
 # Constants
 IMPUTATION_FUNCTION = impute_missing_data
-INPUT_FILE = 'data\\cars_small.csv'
+INPUT_FILE = 'data\\cars.csv'
 OUTPUT_FILE = 'output.csv'
 HAS_HEADER = True
 FRACTIONS = [0.05, 0.1, 0.2, 0.3, 0.4]
 MECHANISMS = ['MCAR', 'MAR', 'MNAR']
 NUM_TRIES = 100
 P_OBS = 0.3
-SUBSAMPLE = None
+SUBSAMPLE = 0.05
 
 
 
