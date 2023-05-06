@@ -20,7 +20,9 @@ def impute_missing_data(data):
 
     # Impute missing values
     imputed_data = imputer.fit_transform(data)
-
+    if imputed_data.shape[1] == 11:
+        print(imputed_data)
+        print(data)
     # Create a DataFrame from the imputed data
     return pd.DataFrame(imputed_data, columns=data.columns)
 

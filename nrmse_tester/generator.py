@@ -60,12 +60,40 @@ def _generate_missing_mask(data, fraction, mechanism, p_obs=0.5):
     elif mechanism == 'MNAR':
         mask = _generate_mnar_mask(data, n_missing, p_obs)
 
-    
+    mask = _change_one_to_zero(mask)
     data_nas = data.mask(mask==1)
-    print(data_nas)
-    
 
     return data_nas, mask
+
+
+def _change_one_to_zero(df):
+    """
+    Change one random value to 0 for each column in which all values are 1.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input data as a pandas DataFrame.
+
+    Returns
+    -------
+    modified_df : pandas.DataFrame
+        Modified data as a pandas DataFrame.
+
+    Notes
+    -----
+    This function changes one random value to 0 for each column in which all values are 1.
+
+    Author: Adam Michalik
+    """
+    modified_df = df.copy()
+
+    for col in modified_df.columns:
+        if all(modified_df[col] == 1):
+            idx = np.random.choice(modified_df.index)
+            modified_df.at[idx, col] = 0
+
+    return modified_df
 
 
 def _generate_mar_mask(data, n_missing , p_obs):
@@ -364,7 +392,7 @@ if __name__ == '__main__':
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Generate datasets with missing values.')
     parser.add_argument('input_file', help='Input CSV file')
-    parser.add_argument('-m', '--fraction', type=float, default=10, help='Fraction of missing values')
+    parser.add_argument('-f', '--fraction', type=float, default=10, help='Fraction of missing values')
     parser.add_argument('-t', '--mechanism', choices=['MCAR', 'MAR', 'MNAR'], default='MCAR', help='Missing data mechanism')
     parser.add_argument('-n', '--num_files', type=int, default=1, help='Number of files to generate')
     parser.add_argument('-o', '--output_name', default='output', help='Output name')
