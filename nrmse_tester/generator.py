@@ -1,66 +1,181 @@
 import argparse
 import pandas as pd
 import numpy as np
-import torch
-
-from mask_creator import MAR_mask, MNAR_mask_logistic
+from sklearn.linear_model import LogisticRegression
 
 
-def _produce_NA(X, p_miss, mecha, p_obs):
+def _generate_missing_mask(data, fraction, mechanism, p_obs=0.5):
     """
-    Generates missing values for a specific missing-data mechanism and proportion of missing values.
-    
+    Generate a missing value mask for a pandas DataFrame based on the selected missing data mechanism (MCAR, MAR, or MNAR)
+    and the percentage of missing values to generate.
+
     Parameters
     ----------
-    X : torch.DoubleTensor or np.ndarray, shape (n, d)
-        Data for which missing values will be simulated.
-        If a numpy array is provided, it will be converted to a PyTorch tensor.
-    p_miss : float
-        Proportion of missing values to generate for variables that will have missing values.
-    mecha : str
-        Indicates the missing-data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
-    p_obs : float
-        If mecha = "MAR" or mecha = "MNAR", proportion of variables with *no* missing values
-        that will be used for the logistic masking model.
-    
+    data : pandas.DataFrame
+        Input data as a pandas DataFrame.
+    fraction : float
+        Percentage of missing values to generate.
+    mechanism : str
+        Missing data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
+    p_obs : float, optional
+        If mechanism = "MAR" or mechanism = "MNAR", proportion of variables with *no* missing values
+        that will be used for the logistic masking model. Default is 0.5.
+
     Returns
     -------
-    X_nas : torch.DoubleTensor or np.ndarray, shape (n, d)
-        Data with the generated missing values.
-    mask : torch.DoubleTensor or np.ndarray, shape (n, d)
-        Binary mask indicating the missing values.
+    mask : pandas.DataFrame
+        Missing value mask as a pandas DataFrame with the same shape as the input data.
 
-    Authors: Aude Sportisse with the help of Marine Le Morvan and Boris Muzellec
-    Online https://rmisstastic.netlify.app/how-to/python/generate_html/how%20to%20generate%20missing%20values
+    Raises
+    ------
+    ValueError
+        If the sum of fraction and p_obs is greater than 1.
 
-    Edited by Adam Michalik
+    Notes
+    -----
+    This function generates a missing value mask for a pandas DataFrame based on the selected missing data mechanism (MCAR, MAR, or MNAR)
+    and the percentage of missing values to generate.
+
+    Author: Adam Michalik
     """
-    # Check if X is a numpy array or a PyTorch tensor, convert to tensor if necessary
-    to_torch = torch.is_tensor(X)  
-    if not to_torch:
-        X = X.astype(np.float32)
-        X = torch.from_numpy(X)
+
+    if fraction + p_obs > 1:
+        raise ValueError("The sum of fraction and p_obs cannot be greater than 1.")
+
+    # Compute the number of missing values to generate
+    n_missing = int(round(data.size * fraction))
     
-    # Generate missing values based on the specified missing-data mechanism
-    if mecha == "MAR":
-        # generate missing values using a masking mechanism that is dependent on non-missing variables
-        mask = MAR_mask(X, p_miss, p_obs).float()
-    elif mecha == "MNAR":
-        # generate missing values using a masking mechanism that is dependent on non-missing variables
-        # the masking mechanism is a logistic regression model
-        mask = MNAR_mask_logistic(X, p_miss, p_obs).float()
-    else:
-        # generate missing values using a masking mechanism that is independent of the data
-        mask = (torch.rand(X.shape) < p_miss).float()
+    # Generate missing values using the specified mechanism
+    if mechanism == 'MCAR':
+        # Initialize the missing value mask
+        mask = pd.DataFrame(np.zeros_like(data.values), index=data.index, columns=data.columns)
+        # Generate random indices for missing values
+        missing_indices = np.random.choice(data.size, n_missing, replace=False)
+        # Set the corresponding entries in the missing value mask to 1
+        mask.values.flat[missing_indices] = 1
+
+    elif mechanism == 'MAR':
+        mask = _generate_mar_mask(data, n_missing, p_obs)
+
+    elif mechanism == 'MNAR':
+        mask = _generate_mnar_mask(data, n_missing, p_obs)
+
     
-    # Create a copy of X with the generated missing values
-    X_nas = X.clone()
-    X_nas[mask.bool()] = np.nan
+    data_nas = data.mask(mask==1)
+    print(data_nas)
     
-    return X_nas, mask
+
+    return data_nas, mask
 
 
-def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_obs, subsample, num_retries=100):
+def _generate_mar_mask(data, n_missing , p_obs):
+    """
+    Generate a missing value mask for a pandas DataFrame based on the MAR mechanism and the percentage of missing values
+    to generate.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Input data as a pandas DataFrame.
+    percentage : float
+        Percentage of missing values to generate.
+    p_obs : float, optional
+        Proportion of variables with *no* missing values that will be used for the logistic masking model. Default is 0.5.
+
+    Returns
+    -------
+    mask : pandas.DataFrame
+        Missing value mask as a pandas DataFrame with the same shape as the input data.
+
+    Notes
+    -----
+    This function generates a missing value mask for a pandas DataFrame based on the MAR mechanism and the percentage of
+    missing values to generate.
+
+    Author: Adam Michalik
+    """
+
+    # Initialize the missing value mask
+    mask = pd.DataFrame(np.zeros_like(data.values), index=data.index, columns=data.columns)
+
+    # Compute the number of variables with complete data
+    n_observed = int(np.ceil(data.shape[1] * p_obs))
+    full_cols = np.random.choice(np.array(data.columns), size=n_observed, replace=False)
+    missing_cols = np.array(data.columns)[~np.isin(np.array(data.columns), full_cols)]
+
+    # Fit a logistic regression model to predict missingness in the remaining variables
+    probs = pd.DataFrame()
+    for col in missing_cols:
+        lr = LogisticRegression(solver='lbfgs')
+        lr.fit(data[full_cols].sample(n=2), [0, 1])
+        # Generate missing values using the logistic masking model
+        missing_probs = lr.predict_proba(data[full_cols])
+        probs[col] = missing_probs[:, 0]
+
+    # Set the corresponding entries in the missing value mask to 1
+    lowest = probs.stack().nsmallest(n_missing).index
+    for x, y in lowest:
+        mask.loc[x, y] = 1
+
+    return mask
+
+
+def _generate_mnar_mask(data, n_missing, p_obs):
+    """
+    Generate a missing value mask for a pandas DataFrame based on the MNAR missing data mechanism and the
+    percentage of missing values to generate.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Input data as a pandas DataFrame.
+    fraction : float
+        Percentage of missing values to generate.
+    p_obs : float, optional
+        Proportion of variables with *no* missing values that will be used for the logistic masking model.
+        Default is 0.5.
+
+    Returns
+    -------
+    mask : pandas.DataFrame
+        Missing value mask as a pandas DataFrame with the same shape as the input data.
+
+    Notes
+    -----
+    This function generates a missing value mask for a pandas DataFrame based on the MNAR missing data mechanism
+    and the percentage of missing values to generate. It assumes that missingness is dependent on the values of
+    other variables in the dataset.
+
+    Author: Adam Michalik
+    """
+
+    # Initialize the missing value mask
+    mask = pd.DataFrame(np.zeros_like(data.values), index=data.index, columns=data.columns)
+
+    # Compute the number of variables with complete data
+    n_observed = int(np.ceil(data.shape[1] * p_obs))
+    full_cols = np.random.choice(np.array(data.columns), size=n_observed, replace=False)
+    missing_cols = np.array(data.columns)[~np.isin(np.array(data.columns), full_cols)]
+
+    # Fit a logistic regression model to predict missingness in the remaining variables
+    probs = pd.DataFrame()
+    for col in missing_cols:
+        lr = LogisticRegression(solver='lbfgs')
+        lr.fit(data[np.append(full_cols, col)].sample(n=2), [0,1])
+        # Generate missing values using the logistic masking model
+        missing_probs = lr.predict_proba(data[np.append(full_cols, col)])
+        probs[col] = missing_probs[:, 0]
+        
+    # Set the corresponding entries in the missing value mask to 1
+    lowest = probs.stack().nsmallest(n_missing).index
+    mask = pd.DataFrame(np.zeros_like(data.values), index=data.index, columns=data.columns)
+    for x, y in lowest:
+        mask.loc[x, y] = 1
+
+    return mask
+
+
+def generate_missing_datasets(input_data, fraction, mechanism, num_files, p_obs, subsample, num_retries=500):
     """
     Generate multiple datasets with missing values based on the input data.
 
@@ -68,8 +183,8 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_ob
     ----------
     input_data : pandas.DataFrame
         Input data as a pandas DataFrame.
-    percentage : float
-        Percentage of missing values to generate.
+    fraction : float
+        Fraction of missing values to generate.
     mechanism : str
         Missing data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
     num_files : int
@@ -92,6 +207,8 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_ob
     This function generates multiple datasets with missing values based on the input data. For each dataset, the missing values are generated
     using the specified missing data mechanism and percentage. The generated incomplete datasets and their corresponding missing value masks
     are returned as a list of tuples containing pandas DataFrames.
+
+    Author: Adam Michalik
     """
     created_data = []
 
@@ -104,13 +221,7 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_ob
             sample_data = input_data
 
         # Generate missing values using produce_NA() function
-        for i in range(num_retries):
-                try:
-                    data_incomp, mask = _produce_NA(sample_data, percentage / 100, mecha=mechanism, p_obs=p_obs)
-                except ValueError as e:
-                    if i == num_retries - 1:
-                        raise
-                    print(f"WARNING: {e}. Retrying to create missing data")
+        data_incomp, mask = _generate_missing_mask(pd.DataFrame(sample_data), fraction, mechanism, p_obs)
         
         # Save the incomplete data to a pandas DataFrame
         output_data = pd.DataFrame(data_incomp)
@@ -120,7 +231,6 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_ob
         mask_value_data= pd.DataFrame(sample_data).mask(mask_data != 1)
 
         created_data.append((output_data, mask_value_data))
-        print(mask_value_data)
 
     return created_data
         
@@ -143,6 +253,8 @@ def _input(input_file, has_header):
     header : list or None
         If the input file has a header, returns a list of column names.
         Otherwise, returns None.
+
+    Author: Adam Michalik
     """
     if has_header:
         # If file has header, use pandas to read it
@@ -173,6 +285,8 @@ def _output(created_data, output_name, has_header, header):
     Returns
     -------
     None
+
+    Author: Adam Michalik
     """
 
     # Loop over the generated data and mask tuples
@@ -204,7 +318,7 @@ def _output(created_data, output_name, has_header, header):
         print(f"Generated mask: {mask_file}")
 
 
-def _main(input_file, percentage, mechanism, num_files, output_name, has_header, p_obs, subsample):
+def _main(input_file, fraction, mechanism, num_files, output_name, has_header, p_obs, subsample):
     """
     Run the data generation pipeline for creating multiple datasets with missing values.
     
@@ -212,8 +326,8 @@ def _main(input_file, percentage, mechanism, num_files, output_name, has_header,
     ----------
     input_file : str
         Input CSV file.
-    percentage : float
-        Percentage of missing values to generate.
+    fraction : float
+        Fraction of missing values to generate.
     mechanism : str
         Missing data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
     num_files : int
@@ -232,13 +346,15 @@ def _main(input_file, percentage, mechanism, num_files, output_name, has_header,
     
     Calls `generate_missing_datasets()` to create multiple datasets with missing values based on the input file, and
     then calls `_output()` to save the generated datasets to CSV files.
+
+    Author: Adam Michalik
     """
     
     # Load the input CSV file
     input_data, header = _input(input_file, has_header)
 
     # Generate missing datasets using `generate_missing_datasets()`
-    created_data = generate_missing_datasets(input_data, percentage, mechanism, num_files, p_obs, subsample)
+    created_data = generate_missing_datasets(input_data, fraction, mechanism, num_files, p_obs, subsample)
 
     # Save the generated datasets using `_output()`
     _output(created_data, output_name, has_header, header)
@@ -248,13 +364,13 @@ if __name__ == '__main__':
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Generate datasets with missing values.')
     parser.add_argument('input_file', help='Input CSV file')
-    parser.add_argument('-p', '--percentage', type=float, default=10, help='Percentage of missing values')
+    parser.add_argument('-m', '--fraction', type=float, default=10, help='Fraction of missing values')
     parser.add_argument('-t', '--mechanism', choices=['MCAR', 'MAR', 'MNAR'], default='MCAR', help='Missing data mechanism')
-    parser.add_argument('-f', '--num_files', type=int, default=1, help='Number of files to generate')
+    parser.add_argument('-n', '--num_files', type=int, default=1, help='Number of files to generate')
     parser.add_argument('-o', '--output_name', default='output', help='Output name')
     parser.add_argument('-e', '--has_header', action='store_true', help='Input file has a header')
     parser.add_argument('-b', '--p_obs', type=float, default=0.1, help='Proportion of variables with no missing values (required for MAR and MNAR)')
     parser.add_argument('-s', '--subsample', type=float, default=None, help='Ratio of dataset subsampling for each run')
     args = parser.parse_args()
 
-    _main(args.input_file, args.percentage, args.mechanism, args.num_files, args.output_name, args.has_header, args.p_obs, args.subsample)
+    _main(args.input_file, args.fraction, args.mechanism, args.num_files, args.output_name, args.has_header, args.p_obs, args.subsample)

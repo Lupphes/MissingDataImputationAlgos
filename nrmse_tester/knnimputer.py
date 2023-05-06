@@ -2,6 +2,7 @@ import argparse
 import pandas as pd
 from sklearn.impute import KNNImputer
 
+
 def impute_missing_data(data):
     """
     Imputes missing data using the KNNImputer algorithm.
@@ -11,6 +12,8 @@ def impute_missing_data(data):
 
     Returns:
         pandas.DataFrame: The dataset with missing values replaced with imputed values.
+    
+    Author: Adam Michalik
     """
     # Create a KNNImputer object
     imputer = KNNImputer()
@@ -33,6 +36,8 @@ def _main(input_file, output_file):
 
     Returns:
         None
+
+    Author: Adam Michalik
     """
     # Load the CSV file
     data = pd.read_csv(input_file)
@@ -43,6 +48,8 @@ def _main(input_file, output_file):
     # Save the imputed data to CSV
     imputed_data.to_csv(output_file, index=False)
     print(f"Imputed data saved to {output_file}")
+
+
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Impute missing data using KNNImputer")

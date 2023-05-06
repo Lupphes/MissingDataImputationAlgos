@@ -2,7 +2,6 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
-from mask_creator import *
 
 
 def _calculate_nrmse(original_values, imputed_values):
@@ -20,6 +19,8 @@ def _calculate_nrmse(original_values, imputed_values):
     -------
     nrmse : float
         The calculated NRMSE value.
+
+    Author: Adam Michalik
     """
     # Calculate the difference between original and imputed datasets
     diff = original_values - imputed_values
@@ -54,6 +55,8 @@ def evaluate_imputations(imputed_datas):
         The maximum NRMSE value.
     nrmse_values : list
         A list of NRMSE values for each imputed file.
+
+    Author: Adam Michalik
     """
 
     nrmse_values = []
@@ -62,8 +65,6 @@ def evaluate_imputations(imputed_datas):
     for imputed_data,mask_data in imputed_datas:
         original_values = mask_data.values[~np.isnan(mask_data.values)]
         imputed_values = imputed_data.values[~np.isnan(mask_data.values)]
-        print(original_values)
-        print(imputed_values)
         nrmse = _calculate_nrmse(original_values, imputed_values)
         nrmse_values.append(nrmse)
 
@@ -95,7 +96,10 @@ def _input(imputed_files, has_header):
     tuple
         A tuple of two elements containing the original data as a pandas dataframe and a list of tuples,
         where each tuple contains the mask data and imputed data as pandas dataframes.
+
+    Author: Adam Michalik
     """
+
     # Create an empty list to hold the imputed data and their corresponding masks
     imputed_datas = []
 
@@ -135,6 +139,8 @@ def _output(output_file, avg_nrmse, min_nrmse, max_nrmse, nrmse_values):
 
     Returns:
         None
+
+    Author: Adam Michalik
     """
 
     if nrmse_values:
@@ -170,6 +176,8 @@ def _main(imputed_files, has_header=False, output_file=None):
 
     Returns:
         None
+    
+    Author: Adam Michalik
     """
 
     imputed_datas = _input(imputed_files, has_header)
