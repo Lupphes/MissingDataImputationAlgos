@@ -2,12 +2,11 @@ import argparse
 import pandas as pd
 import numpy as np
 import torch
-import seaborn as sns
 
-from utils import *
+from mask_creator import MAR_mask, MNAR_mask_logistic
 
 
-def _produce_NA(X, p_miss, mecha="MCAR", opt=None, p_obs=None, q=None):
+def _produce_NA(X, p_miss, mecha, p_obs):
     """
     Generates missing values for a specific missing-data mechanism and proportion of missing values.
     
@@ -18,18 +17,11 @@ def _produce_NA(X, p_miss, mecha="MCAR", opt=None, p_obs=None, q=None):
         If a numpy array is provided, it will be converted to a PyTorch tensor.
     p_miss : float
         Proportion of missing values to generate for variables that will have missing values.
-    mecha : str, optional
-        Indicates the missing-data mechanism to be used. Options: "MCAR" (default), "MAR", "MNAR".
-    opt: str, optional
-        For mecha = "MNAR", it indicates how the missing-data mechanism is generated:
-        - "logistic" for logistic regression
-        - "quantile" for quantile censorship
-        - "selfmasked" for logistic regression for generating a self-masked MNAR mechanism
-    p_obs : float, optional
-        If mecha = "MAR" or mecha = "MNAR" with opt = "logistic" or "quanti", proportion of variables with *no* missing values
+    mecha : str
+        Indicates the missing-data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
+    p_obs : float
+        If mecha = "MAR" or mecha = "MNAR", proportion of variables with *no* missing values
         that will be used for the logistic masking model.
-    q : float, optional
-        If mecha = "MNAR" and opt = "quanti", quantile level at which the cuts should occur.
     
     Returns
     -------
@@ -37,6 +29,11 @@ def _produce_NA(X, p_miss, mecha="MCAR", opt=None, p_obs=None, q=None):
         Data with the generated missing values.
     mask : torch.DoubleTensor or np.ndarray, shape (n, d)
         Binary mask indicating the missing values.
+
+    Authors: Aude Sportisse with the help of Marine Le Morvan and Boris Muzellec
+    Online https://rmisstastic.netlify.app/how-to/python/generate_html/how%20to%20generate%20missing%20values
+
+    Edited by Adam Michalik
     """
     # Check if X is a numpy array or a PyTorch tensor, convert to tensor if necessary
     to_torch = torch.is_tensor(X)  
@@ -47,22 +44,14 @@ def _produce_NA(X, p_miss, mecha="MCAR", opt=None, p_obs=None, q=None):
     # Generate missing values based on the specified missing-data mechanism
     if mecha == "MAR":
         # generate missing values using a masking mechanism that is dependent on non-missing variables
-        mask = MAR_mask(X, p_miss, p_obs).double()
-    elif mecha == "MNAR" and opt == "logistic":
+        mask = MAR_mask(X, p_miss, p_obs).float()
+    elif mecha == "MNAR":
         # generate missing values using a masking mechanism that is dependent on non-missing variables
         # the masking mechanism is a logistic regression model
-        mask = MNAR_mask_logistic(X, p_miss, p_obs).double()
-    elif mecha == "MNAR" and opt == "quantile":
-        # generate missing values using a masking mechanism that is dependent on non-missing variables
-        # the masking mechanism is based on quantiles of the non-missing variables
-        mask = MNAR_mask_quantiles(X, p_miss, q, 1 - p_obs).double()
-    elif mecha == "MNAR" and opt == "selfmasked":
-        # generate missing values using a masking mechanism that is dependent on missing and non-missing variables
-        # the masking mechanism is a logistic regression model
-        mask = MNAR_self_mask_logistic(X, p_miss).double()
+        mask = MNAR_mask_logistic(X, p_miss, p_obs).float()
     else:
         # generate missing values using a masking mechanism that is independent of the data
-        mask = (torch.rand(X.shape) < p_miss).double()
+        mask = (torch.rand(X.shape) < p_miss).float()
     
     # Create a copy of X with the generated missing values
     X_nas = X.clone()
@@ -71,7 +60,7 @@ def _produce_NA(X, p_miss, mecha="MCAR", opt=None, p_obs=None, q=None):
     return X_nas, mask
 
 
-def generate_missing_datasets(input_data, percentage, mechanism, num_files, opt=None, p_obs=None, q=None):
+def generate_missing_datasets(input_data, percentage, mechanism, num_files, p_obs, subsample, num_retries=100):
     """
     Generate multiple datasets with missing values based on the input data.
 
@@ -82,19 +71,16 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, opt=
     percentage : float
         Percentage of missing values to generate.
     mechanism : str
-        Missing data mechanism to be used. Options: "MCAR" (default), "MAR", "MNAR", or "MNARsmask".
+        Missing data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
     num_files : int
         Number of files to generate.
-    opt: str, optional
-        For mecha = "MNAR", it indicates how the missing-data mechanism is generated:
-        - "logistic" for logistic regression
-        - "quantile" for quantile censorship
-        - "selfmasked" for logistic regression for generating a self-masked MNAR mechanism
-    p_obs : float, optional
-        If mecha = "MAR" or mecha = "MNAR" with opt = "logistic" or "quanti", proportion of variables with *no* missing values
+    p_obs : float
+        If mecha = "MAR" or mecha = "MNAR", proportion of variables with *no* missing values
         that will be used for the logistic masking model.
-    q : float, optional
-        If mecha = "MNAR" and opt = "quanti", quantile level at which the cuts should occur.
+    subsample : float or None, optional
+        Fraction of rows to randomly subsample from the input data. If None, no subsampling is performed. Default is None.
+    num_retries : int, optional
+        Number of retries to attempt if producing missing data fails. Default is 100.
         
     Returns
     -------
@@ -107,21 +93,34 @@ def generate_missing_datasets(input_data, percentage, mechanism, num_files, opt=
     using the specified missing data mechanism and percentage. The generated incomplete datasets and their corresponding missing value masks
     are returned as a list of tuples containing pandas DataFrames.
     """
-
     created_data = []
 
     # Create multiple datasets with missing values
     for i in range(num_files):
+        if subsample is not None:
+            # Randomly subsample rows
+            sample_data = input_data[np.random.choice(input_data.shape[0], int(subsample*input_data.shape[0]), replace=False), :]
+        else:
+            sample_data = input_data
+
         # Generate missing values using produce_NA() function
-        data_incomp, mask = _produce_NA(input_data, percentage / 100, mecha=mechanism, opt=opt, p_obs=p_obs, q=q)
+        for i in range(num_retries):
+                try:
+                    data_incomp, mask = _produce_NA(sample_data, percentage / 100, mecha=mechanism, p_obs=p_obs)
+                except ValueError as e:
+                    if i == num_retries - 1:
+                        raise
+                    print(f"WARNING: {e}. Retrying to create missing data")
         
         # Save the incomplete data to a pandas DataFrame
         output_data = pd.DataFrame(data_incomp)
         
         # Save the mask to a pandas DataFrame
         mask_data = pd.DataFrame(mask)
+        mask_value_data= pd.DataFrame(sample_data).mask(mask_data != 1)
 
-        created_data.append((output_data, mask_data))
+        created_data.append((output_data, mask_value_data))
+        print(mask_value_data)
 
     return created_data
         
@@ -205,7 +204,7 @@ def _output(created_data, output_name, has_header, header):
         print(f"Generated mask: {mask_file}")
 
 
-def _main(input_file, percentage, mechanism, num_files, output_name, has_header, opt=None, p_obs=0.5, q=0.5):
+def _main(input_file, percentage, mechanism, num_files, output_name, has_header, p_obs, subsample):
     """
     Run the data generation pipeline for creating multiple datasets with missing values.
     
@@ -216,23 +215,16 @@ def _main(input_file, percentage, mechanism, num_files, output_name, has_header,
     percentage : float
         Percentage of missing values to generate.
     mechanism : str
-        Missing data mechanism to be used. Options: "MCAR" (default), "MAR", "MNAR", or "MNARsmask".
+        Missing data mechanism to be used. Options: "MCAR", "MAR", "MNAR".
     num_files : int
         Number of files to generate.
     output_name : str
         Output file name prefix.
     has_header : bool
         Specifies if the input file has a header.
-    opt: str, optional
-        For mecha = "MNAR", it indicates how the missing-data mechanism is generated:
-        - "logistic" for logistic regression
-        - "quantile" for quantile censorship
-        - "selfmasked" for logistic regression for generating a self-masked MNAR mechanism
-    p_obs : float, optional
-        If mecha = "MAR" or mecha = "MNAR" with opt = "logistic" or "quanti", proportion of variables with *no* missing values
+    p_obs : float
+        If mecha = "MAR" or mecha = "MNAR", proportion of variables with *no* missing values
         that will be used for the logistic masking model.
-    q : float, optional
-        If mecha = "MNAR" and opt = "quanti", quantile level at which the cuts should occur.
     
     Returns
     -------
@@ -246,7 +238,7 @@ def _main(input_file, percentage, mechanism, num_files, output_name, has_header,
     input_data, header = _input(input_file, has_header)
 
     # Generate missing datasets using `generate_missing_datasets()`
-    created_data = generate_missing_datasets(input_data, percentage, mechanism, num_files, opt, p_obs, q)
+    created_data = generate_missing_datasets(input_data, percentage, mechanism, num_files, p_obs, subsample)
 
     # Save the generated datasets using `_output()`
     _output(created_data, output_name, has_header, header)
@@ -261,9 +253,8 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--num_files', type=int, default=1, help='Number of files to generate')
     parser.add_argument('-o', '--output_name', default='output', help='Output name')
     parser.add_argument('-e', '--has_header', action='store_true', help='Input file has a header')
-    parser.add_argument('-x', '--opt', default=None, choices=['logistic', 'quantile', 'selfmasked'], help='Missing-data mechanism option (required for MNAR)')
-    parser.add_argument('-b', '--p_obs', type=float, default=None, help='Proportion of variables with no missing values (required for MAR and MNAR with logistic or quantile option)')
-    parser.add_argument('-q', '--quantile', type=float, default=None, help='Quantile level for MNAR with quantile option')
+    parser.add_argument('-b', '--p_obs', type=float, default=0.1, help='Proportion of variables with no missing values (required for MAR and MNAR)')
+    parser.add_argument('-s', '--subsample', type=float, default=None, help='Ratio of dataset subsampling for each run')
     args = parser.parse_args()
 
-    _main(args.input_file, args.percentage, args.mechanism, args.num_files, args.output_name, args.has_header, args.opt, args.p_obs, args.quantile)
+    _main(args.input_file, args.percentage, args.mechanism, args.num_files, args.output_name, args.has_header, args.p_obs, args.subsample)

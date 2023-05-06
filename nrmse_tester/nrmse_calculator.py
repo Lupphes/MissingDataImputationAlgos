@@ -2,7 +2,7 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
-from utils import *
+from mask_creator import *
 
 
 def _calculate_nrmse(original_values, imputed_values):
@@ -27,16 +27,13 @@ def _calculate_nrmse(original_values, imputed_values):
     # Calculate the root mean squared error (RMSE) between original and imputed datasets
     rmse = np.sqrt(np.mean(diff ** 2))
 
-    # Get the maximum value from the original dataset
-    max_value = np.max(original_values)
-
-    # Calculate the normalized RMSE (NRMSE) by dividing RMSE by max value
-    nrmse = rmse / max_value
+    # Calculate the normalized RMSE (NRMSE) by dividing RMSE by avg value
+    nrmse = rmse / np.mean(original_values)
 
     return nrmse
 
 
-def evaluate_imputations(original_data, imputed_datas):
+def evaluate_imputations(imputed_datas):
     """
     Evaluate the imputations by calculating the NRMSE for each imputed file.
 
@@ -63,8 +60,10 @@ def evaluate_imputations(original_data, imputed_datas):
 
     # Calculate NRMSE for each imputed file
     for imputed_data,mask_data in imputed_datas:
-        original_values = original_data.values[mask_data.values == 1]
-        imputed_values = imputed_data.values[mask_data.values == 1]
+        original_values = mask_data.values[~np.isnan(mask_data.values)]
+        imputed_values = imputed_data.values[~np.isnan(mask_data.values)]
+        print(original_values)
+        print(imputed_values)
         nrmse = _calculate_nrmse(original_values, imputed_values)
         nrmse_values.append(nrmse)
 
@@ -78,7 +77,7 @@ def evaluate_imputations(original_data, imputed_datas):
     return None, None, None, []
 
 
-def _input(template, imputed_files, has_header):
+def _input(imputed_files, has_header):
     """
     Load the original dataset and imputed files and their corresponding mask files. 
 
@@ -100,9 +99,6 @@ def _input(template, imputed_files, has_header):
     # Create an empty list to hold the imputed data and their corresponding masks
     imputed_datas = []
 
-    # Load the original dataset
-    original_data = pd.read_csv(template, header=0 if has_header else None)
-
     # Evaluate each imputed file
     for imputed_file in imputed_files:
         # Get the corresponding mask file
@@ -123,7 +119,7 @@ def _input(template, imputed_files, has_header):
         imputed_datas.append((imputed_data, mask_data))
 
     # Return the original data and the list of imputed data and their corresponding masks
-    return original_data, imputed_datas
+    return imputed_datas
 
 
 def _output(output_file, avg_nrmse, min_nrmse, max_nrmse, nrmse_values):
@@ -162,7 +158,7 @@ def _output(output_file, avg_nrmse, min_nrmse, max_nrmse, nrmse_values):
         print("No valid imputed files found for evaluation.")
 
 
-def _main(template, imputed_files, has_header=False, output_file=None):
+def _main(imputed_files, has_header=False, output_file=None):
     """
     Main function that runs the imputation evaluation on the given imputed files.
 
@@ -176,9 +172,9 @@ def _main(template, imputed_files, has_header=False, output_file=None):
         None
     """
 
-    original_data, imputed_datas = _input(template, imputed_files, has_header)
+    imputed_datas = _input(imputed_files, has_header)
 
-    avg_nrmse, min_nrmse, max_nrmse, nrmse_values = evaluate_imputations(original_data, imputed_datas)
+    avg_nrmse, min_nrmse, max_nrmse, nrmse_values = evaluate_imputations(imputed_datas)
 
     _output(output_file, avg_nrmse, min_nrmse, max_nrmse, nrmse_values)
 
@@ -187,10 +183,9 @@ if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Evaluate multiple imputed datasets.")
     parser.add_argument("imputed_files", nargs="+", help="Imputed datasets")
-    parser.add_argument("-t", "--template", required=True, help="Original dataset")
     parser.add_argument("-o", "--output", help="Output file for NRMSE summary")
     parser.add_argument("-e", "--has_header", action="store_true", help="Input files have headers")
     args = parser.parse_args()
 
     # Evaluate imputations
-    _main(args.template, args.imputed_files, args.has_header, args.output)
+    _main(args.imputed_files, args.has_header, args.output)
