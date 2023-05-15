@@ -158,3 +158,10 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Fortran
+hyperplanes.txt
+imputed_values.txt
+iris_imputed.txt
+predictions.txt
+filled.txt
