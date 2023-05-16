@@ -44,7 +44,7 @@ def _generate_missing_mask(data, fraction, mechanism, p_obs=0.5):
 
     # Compute the number of missing values to generate
     n_missing = int(round(data.size * fraction))
-    
+
     # Generate missing values using the specified mechanism
     if mechanism == 'MCAR':
         # Initialize the missing value mask
@@ -60,15 +60,18 @@ def _generate_missing_mask(data, fraction, mechanism, p_obs=0.5):
     elif mechanism == 'MNAR':
         mask = _generate_mnar_mask(data, n_missing, p_obs)
 
-    mask = _change_one_to_zero(mask)
-    data_nas = data.mask(mask==1)
+    else:
+        mask = None
+
+    mask = _change_to_workable_matrix(mask)
+    data_nas = data.mask(mask == 1)
 
     return data_nas, mask
 
 
-def _change_one_to_zero(df):
+def _change_to_workable_matrix(df):
     """
-    Change one random value to 0 for each column in which all values are 1.
+    Change to matrix which has at least one row and column untouched
 
     Parameters
     ----------
@@ -80,23 +83,24 @@ def _change_one_to_zero(df):
     modified_df : pandas.DataFrame
         Modified data as a pandas DataFrame.
 
-    Notes
-    -----
-    This function changes one random value to 0 for each column in which all values are 1.
-
     Author: Adam Michalik
     """
     modified_df = df.copy()
 
-    for col in modified_df.columns:
-        if all(modified_df[col] == 1):
-            idx = np.random.choice(modified_df.index)
-            modified_df.at[idx, col] = 0
+    zero_columns = (modified_df == 0).all(axis=0)
+    if not zero_columns.any():
+        random_column = np.random.choice(modified_df.columns)
+        modified_df[random_column] = 0
+
+    zero_rows = (modified_df == 0).all(axis=1)
+    if not zero_rows.any():
+        random_row_index = np.random.choice(modified_df.index)
+        modified_df.loc[random_row_index] = 0
 
     return modified_df
 
 
-def _generate_mar_mask(data, n_missing , p_obs):
+def _generate_mar_mask(data, n_missing, p_obs):
     """
     Generate a missing value mask for a pandas DataFrame based on the MAR mechanism and the percentage of missing values
     to generate.
@@ -189,11 +193,11 @@ def _generate_mnar_mask(data, n_missing, p_obs):
     probs = pd.DataFrame()
     for col in missing_cols:
         lr = LogisticRegression(solver='lbfgs')
-        lr.fit(data[np.append(full_cols, col)].sample(n=2), [0,1])
+        lr.fit(data[np.append(full_cols, col)].sample(n=2), [0, 1])
         # Generate missing values using the logistic masking model
         missing_probs = lr.predict_proba(data[np.append(full_cols, col)])
         probs[col] = missing_probs[:, 0]
-        
+
     # Set the corresponding entries in the missing value mask to 1
     lowest = probs.stack().nsmallest(n_missing).index
     mask = pd.DataFrame(np.zeros_like(data.values), index=data.index, columns=data.columns)
@@ -244,24 +248,25 @@ def generate_missing_datasets(input_data, fraction, mechanism, num_files, p_obs,
     for i in range(num_files):
         if subsample is not None:
             # Randomly subsample rows
-            sample_data = input_data[np.random.choice(input_data.shape[0], int(subsample*input_data.shape[0]), replace=False), :]
+            sample_data = input_data[
+                          np.random.choice(input_data.shape[0], int(subsample * input_data.shape[0]), replace=False), :]
         else:
             sample_data = input_data
 
         # Generate missing values using produce_NA() function
         data_incomp, mask = _generate_missing_mask(pd.DataFrame(sample_data), fraction, mechanism, p_obs)
-        
+
         # Save the incomplete data to a pandas DataFrame
         output_data = pd.DataFrame(data_incomp)
-        
+
         # Save the mask to a pandas DataFrame
         mask_data = pd.DataFrame(mask)
-        mask_value_data= pd.DataFrame(sample_data).mask(mask_data != 1)
+        mask_value_data = pd.DataFrame(sample_data).mask(mask_data != 1)
 
         created_data.append((output_data, mask_value_data))
 
     return created_data
-        
+
 
 def _input(input_file, has_header):
     """
@@ -289,11 +294,10 @@ def _input(input_file, has_header):
         data = pd.read_csv(input_file)
         header = list(data.columns)
         return data.values, header
-    else:
-        # If file doesn't have header, use numpy to read it
-        header = None
-        return np.loadtxt(input_file, delimiter=','), header
-    
+    # If file doesn't have header, use numpy to read it
+    header = None
+    return np.loadtxt(input_file, delimiter=','), header
+
 
 def _output(created_data, output_name, has_header, header):
     """
@@ -321,8 +325,8 @@ def _output(created_data, output_name, has_header, header):
     for i, (output_data, mask_data) in enumerate(created_data):
         # Generate a new file name
         if len(created_data) > 1:
-            output_file = f"{output_name}_{i+1}.csv"
-            mask_file = f"{output_name}_{i+1}.mask"
+            output_file = f"{output_name}_{i + 1}.csv"
+            mask_file = f"{output_name}_{i + 1}.mask"
         else:
             output_file = f"{output_name}.csv"
             mask_file = f"{output_name}.mask"
@@ -377,7 +381,7 @@ def _main(input_file, fraction, mechanism, num_files, output_name, has_header, p
 
     Author: Adam Michalik
     """
-    
+
     # Load the input CSV file
     input_data, header = _input(input_file, has_header)
 
@@ -393,12 +397,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate datasets with missing values.')
     parser.add_argument('input_file', help='Input CSV file')
     parser.add_argument('-f', '--fraction', type=float, default=10, help='Fraction of missing values')
-    parser.add_argument('-t', '--mechanism', choices=['MCAR', 'MAR', 'MNAR'], default='MCAR', help='Missing data mechanism')
+    parser.add_argument('-t', '--mechanism', choices=['MCAR', 'MAR', 'MNAR'], default='MCAR',
+                        help='Missing data mechanism')
     parser.add_argument('-n', '--num_files', type=int, default=1, help='Number of files to generate')
     parser.add_argument('-o', '--output_name', default='output', help='Output name')
     parser.add_argument('-e', '--has_header', action='store_true', help='Input file has a header')
-    parser.add_argument('-b', '--p_obs', type=float, default=0.1, help='Proportion of variables with no missing values (required for MAR and MNAR)')
+    parser.add_argument('-b', '--p_obs', type=float, default=0.1,
+                        help='Proportion of variables with no missing values (required for MAR and MNAR)')
     parser.add_argument('-s', '--subsample', type=float, default=None, help='Ratio of dataset subsampling for each run')
     args = parser.parse_args()
 
-    _main(args.input_file, args.fraction, args.mechanism, args.num_files, args.output_name, args.has_header, args.p_obs, args.subsample)
+    _main(args.input_file, args.fraction, args.mechanism, args.num_files, args.output_name, args.has_header, args.p_obs,
+          args.subsample)

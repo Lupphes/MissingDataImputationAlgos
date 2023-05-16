@@ -34,16 +34,16 @@ def _calculate_nrmse(original_values, imputed_values):
     return nrmse
 
 
-def evaluate_imputations(imputed_datas):
+def evaluate_imputations(imputed_datas, proportion):
     """
     Evaluate the imputations by calculating the NRMSE for each imputed file.
 
     Parameters:
     -----------
-    original_data : pandas DataFrame
-        The original dataset.
     imputed_datas : list of tuples
         A list of tuples containing imputed data and mask data.
+    proportion : float
+        Proportion of data to be used in statistics
 
     Returns:
     --------
@@ -53,6 +53,8 @@ def evaluate_imputations(imputed_datas):
         The minimum NRMSE value.
     max_nrmse : float or None
         The maximum NRMSE value.
+    data_statistics:list
+        A list of NRMSE values for top n imputed files.
     nrmse_values : list
         A list of NRMSE values for each imputed file.
 
@@ -62,20 +64,22 @@ def evaluate_imputations(imputed_datas):
     nrmse_values = []
 
     # Calculate NRMSE for each imputed file
-    for imputed_data,mask_data in imputed_datas:
+    for imputed_data, mask_data in imputed_datas:
         original_values = mask_data.values[~np.isnan(mask_data.values)]
         imputed_values = imputed_data.values[~np.isnan(mask_data.values)]
         nrmse = _calculate_nrmse(original_values, imputed_values)
         nrmse_values.append(nrmse)
+        nrmse_values.sort()
 
+    data_statistics = nrmse_values[0:int(len(nrmse_values)*proportion)]
     # Calculate NRMSE statistics
     if nrmse_values:
-        avg_nrmse = np.mean(nrmse_values)
-        min_nrmse = np.min(nrmse_values)
-        max_nrmse = np.max(nrmse_values)
-        return avg_nrmse, min_nrmse, max_nrmse, nrmse_values
-    
-    return None, None, None, []
+        avg_nrmse = np.mean(data_statistics)
+        min_nrmse = np.min(data_statistics)
+        max_nrmse = np.max(data_statistics)
+        return avg_nrmse, min_nrmse, max_nrmse, data_statistics, nrmse_values
+
+    return None, None, None, [], []
 
 
 def _input(imputed_files, has_header):
@@ -84,10 +88,8 @@ def _input(imputed_files, has_header):
 
     Parameters
     ----------
-    template : str
-        File path of the original dataset.
-    imputed_files : list
-        List of file paths to the imputed datasets.
+    imputed_files : List
+        of file paths to the imputed datasets.
     has_header : bool
         Specifies if the input files have headers.
 
@@ -112,7 +114,7 @@ def _input(imputed_files, has_header):
         if not os.path.isfile(imputed_file) or not os.path.isfile(mask_file):
             print(f"Missing imputed file or mask for {imputed_file}. Skipping...")
             continue
-    
+
         # Load the mask data
         mask_data = pd.read_csv(mask_file, header=0 if has_header else None)
 
@@ -169,7 +171,6 @@ def _main(imputed_files, has_header=False, output_file=None):
     Main function that runs the imputation evaluation on the given imputed files.
 
     Args:
-        template (str): Path to the original dataset.
         imputed_files (list): List of paths to the imputed datasets.
         has_header (bool, optional): Indicates whether the input files have headers. Default is False.
         output_file (str, optional): Path to the output file for NRMSE summary. Default is None.
