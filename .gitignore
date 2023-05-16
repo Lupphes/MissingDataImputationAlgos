@@ -165,3 +165,7 @@ imputed_values.txt
 iris_imputed.txt
 predictions.txt
 filled.txt
+
+# tester cache and ivia files
+/nrmse_tester/__pycache__
+/nrmse_tester/iviaCLR

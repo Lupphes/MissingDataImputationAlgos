@@ -65,9 +65,12 @@ def evaluate_imputations(imputed_datas, proportion):
 
     # Calculate NRMSE for each imputed file
     for imputed_data, mask_data in imputed_datas:
-        original_values = mask_data.values[~np.isnan(mask_data.values)]
-        imputed_values = imputed_data.values[~np.isnan(mask_data.values)]
-        nrmse = _calculate_nrmse(original_values, imputed_values)
+        if  not imputed_data.empty:
+            original_values = mask_data.values[~np.isnan(mask_data.values)]
+            imputed_values = imputed_data.values[~np.isnan(mask_data.values)]
+            nrmse = _calculate_nrmse(original_values, imputed_values)
+        else:
+            nrmse = 10000
         nrmse_values.append(nrmse)
         nrmse_values.sort()
 

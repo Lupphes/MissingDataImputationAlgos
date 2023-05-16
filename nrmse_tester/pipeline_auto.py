@@ -15,13 +15,13 @@ OUTPUT_FILE = 'output.csv'
 HAS_HEADER = True
 FRACTIONS = [0.05, 0.1, 0.2, 0.3]
 MECHANISMS = ['MCAR', 'MAR', 'MNAR']
-NUM_TRIES = 40
+NUM_TRIES = 2000
 P_OBS = 0.3
 SUBSAMPLE = 0.3
 PROPORTION = 0.5
 
 
-def evaluation_pipeline(imputation_function, input_file, output_file, has_header, fractions, mechanisms, num_tries, p_obs, proportion, subsample, processes=8):
+def evaluation_pipeline(imputation_function, input_file, output_file, has_header, fractions, mechanisms, num_tries, p_obs, proportion, subsample, processes=12):
     # Load the input CSV file
     input_data, header = _input(input_file, has_header)
 

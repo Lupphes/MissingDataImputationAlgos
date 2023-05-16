@@ -5,9 +5,9 @@ import os
 import uuid
 
 
-def run_fortran_app(path_to_fortran_executable, params):
+def run_fortran_app(path_to_fortran_executable, params, cwd):
     command = [path_to_fortran_executable] + params
-    result = subprocess.run(command, stdout=subprocess.PIPE)
+    result = subprocess.run(command, stdout=subprocess.PIPE, cwd=cwd)
     #print('Return code:', result.returncode)
     #print('Output:', result.stdout.decode('utf-8'))
 
@@ -36,7 +36,7 @@ def read_fortran_output(output_file, nft):
 
 def iviaclr(
         data_df: pd.DataFrame,
-        path_to_fortran: str = "../clustering/IviaCLR/iviaclr",
+        path_to_fortran: str = "../../../clustering/IviaCLR/iviaclr",
         output: str = None,
         output_csv: str = None,
         index_column_name: str = None,
@@ -73,16 +73,23 @@ def iviaclr(
     # Write the DataFrame to the temporary file
     data_df.to_csv(tmpfile.name, sep=' ', header=False, index=False)
 
+    cwd = "iviaCLR/" + uuid.uuid4().hex + "/"
+
+    if not os.path.exists("iviaCLR/"):
+        os.makedirs("iviaCLR/")
+
+    os.mkdir(cwd)
+
     if not output:
-        output = "iviaCLR_results/" + uuid.uuid4().hex + ".txt"
+        output = "result.txt"
     parameters = [tmpfile.name, output, str(nrecord), str(nft), str(maxclust), str(init_imp), str(predi), str(misvalue)]
-    run_fortran_app(path_to_fortran, parameters)
+    run_fortran_app(path_to_fortran, parameters, cwd)
 
     # Delete the temporary file
     os.unlink(tmpfile.name)
 
     # Read output file into a DataFrame
-    output_df = read_fortran_output(output, nft)
+    output_df = read_fortran_output(cwd + output, nft)
 
     if output_csv:
         # Save DataFrame to CSV
@@ -92,7 +99,7 @@ def iviaclr(
 
 
 if __name__ == "__main__":
-    PATH_TO_FORTRAN = "../clustering/IviaCLR/iviaclr"
+    PATH_TO_FORTRAN = "../../../clustering/IviaCLR/iviaclr"
     CARS_DATASET_25 = "dataset/cleaned_csv_file_25_missing.csv"
 
     sample_data_df = pd.read_csv(CARS_DATASET_25)
