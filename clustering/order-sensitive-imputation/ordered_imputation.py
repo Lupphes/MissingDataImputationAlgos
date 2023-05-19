@@ -8,7 +8,6 @@ from sklearn.preprocessing import MinMaxScaler
 from operator import itemgetter
 from typing import Dict, List, Tuple, Union
 
-
 def convert_similarity_matrix_to_csv(
     similarity_matrix: pd.DataFrame,
     dataset_similarity_file_path: str,
@@ -49,11 +48,13 @@ def convert_similarity_matrix_to_csv(
     similarity_matrix.insert(
         0, index_column_name, similarity_matrix.index.map(lambda x: f"x{x}")
     )
-
-    # Save the similarity DataFrame as a CSV file
-    similarity_matrix.to_csv(dataset_similarity_file_path, index=False)
+    if dataset_similarity_file_path:
+        # Save the similarity DataFrame as a CSV file
+        similarity_matrix.to_csv(dataset_similarity_file_path, index=False)
 
     return similarity_matrix
+
+
 
 
 def apply_binary_threshold_to_similarity_matrix(
@@ -137,43 +138,29 @@ def create_similarity_score_dataframe(
 
     return similarity_score_df
 
-
-def create_incomplete_connection_dicts(
-    complete_score_list: pd.DataFrame, incomplete_pairs_dict: Dict[str, List[str]]
-) -> Tuple[Dict[str, List[str]], Dict[str, List[float]]]:
+def create_incomplete_connection_dicts(complete_score_list: pd.DataFrame, incomplete_pairs_dict: Dict[str, List[str]]) -> Tuple[Dict[str, List[str]], Dict[str, List[float]]]:
     """
     This function creates two dictionaries.
     The first one, incomplete_node_connections_dict, maps each incomplete node to a list of nodes that it is connected to.
     The second one, incomplete_node_weights_dict, maps each incomplete node to a list of its connection weights.
     """
-    # Initialize the lists to hold connection nodes and weights
-    connection_nodes = []
-    connection_weights = []
+    # Initialize dictionaries to hold connection nodes and weights
+    incomplete_node_connections_dict = {}
+    incomplete_node_weights_dict = {}
 
     # Iterate over each column in the complete list and the incomplete tuples dictionary
-    for column in complete_score_list:
-        for column in incomplete_pairs_dict:
-            # Create a list of nodes that the current column is connected to
-            connected_nodes = list(
-                complete_score_list[complete_score_list[column] != 0.0].indexed
-            )
-            # Create a list of the weights of these connections
-            connection_weights_for_node = list(
-                complete_score_list[complete_score_list[column] != 0.0][column]
-            )
+    for column in complete_score_list.columns:
+        if column in incomplete_pairs_dict:
+            # Filter the complete_score_list for non-zero values in the current column
+            non_zero_mask = complete_score_list[column] != 0.0
+            connected_nodes = complete_score_list.index[non_zero_mask].tolist()
+            connection_weights = complete_score_list.loc[non_zero_mask, column].tolist()
 
-            # Append these lists to the overall lists
-            connection_nodes.append(connected_nodes)
-            connection_weights.append(connection_weights_for_node)
-
-    # Create dictionaries that map each incomplete node to its connection nodes and weights
-    incomplete_node_connections_dict = dict(
-        zip(incomplete_pairs_dict, connection_nodes)
-    )
-    incomplete_node_weights_dict = dict(zip(incomplete_pairs_dict, connection_weights))
+            # Map the incomplete node to its connection nodes and weights
+            incomplete_node_connections_dict[column] = connected_nodes
+            incomplete_node_weights_dict[column] = connection_weights
 
     return incomplete_node_connections_dict, incomplete_node_weights_dict
-
 
 def calculate_p_value(
     incomplete_pairs: List[Tuple[str, str]],
@@ -267,34 +254,34 @@ def process_node_weights(
             A tuple containing dictionaries with final scores and lengths, and lists with score names and removed items.
     """
 
-    print("Incoming incomplete tuples:\n", incomplete_tuples)
-    print("Incoming incomplete data dict:\n", incomplete_values_dict)
-    print("Incoming scores dict:\n", scores_dict)
+    # print("Incoming incomplete tuples:\n", incomplete_tuples)
+    # print("Incoming incomplete data dict:\n", incomplete_values_dict)
+    # print("Incoming scores dict:\n", scores_dict)
     data_dict_2 = get_associated_values_length(
         incomplete_tuples, incomplete_values_dict
     )
-    print("Length of incomplete neighbours:\n", data_dict_2)
+    # print("Length of incomplete neighbours:\n", data_dict_2)
 
-    print("Node Weights:", scores_dict)
+    # print("Node Weights:", scores_dict)
     score_list = []
     score_list_name = []
     removed_item = []
     for element in incomplete_tuples:
-        print("Processing element:", element)
-        print("data_dict_2 value:", data_dict_2[element])
-        print("dict_scores value:", scores_dict[element])
+        # print("Processing element:", element)
+        # print("data_dict_2 value:", data_dict_2[element])
+        # print("dict_scores value:", scores_dict[element])
         if data_dict_2[element] > 0:
             score_list_name.append(element)
             score_list.append(scores_dict[element])
-            print("score_list_name after append:", score_list_name)
-            print("score_list after append:", score_list)
+            # print("score_list_name after append:", score_list_name)
+            # print("score_list after append:", score_list)
         else:
-            print("Removed")
+            # print("Removed")
             removed_item.append(element)
     zip_score_final = zip(score_list_name, score_list)
     data_final_scores = dict(zip_score_final)
-    print("removed item", removed_item)
-    print("Node Weights input to Greedy Algorithm:\n", data_final_scores)
+    # print("removed item", removed_item)
+    # print("Node Weights input to Greedy Algorithm:\n", data_final_scores)
 
     return data_final_scores, data_dict_2, score_list_name, removed_item
 
@@ -356,8 +343,8 @@ def get_highest_score_node(
             The node (tuple) with the highest score not already in the list of complete tuples.
     """
 
-    print(f"Incomplete Tuples Score: {incomplete_tuples_score}")
-    print(f"Complete Tuples: {complete_tuples}")
+    # print(f"Incomplete Tuples Score: {incomplete_tuples_score}")
+    # print(f"Complete Tuples: {complete_tuples}")
 
     # Exclude the nodes that are already in the complete_tuples list
     incomplete_tuples_score = {
@@ -483,14 +470,14 @@ def calculate_order_by_greedy(
     """
 
     for _ in range(len(incomplete_tuples)):
-        print(f"Iteration: {_}")
-        print("Before:")
-        print(f"Incomplete tuples: {incomplete_tuples}")
-        print(f"Complete tuples: {complete_tuples}")
-        print(f"Greedy order: {greedy_order}")
+        # print(f"Iteration: {_}")
+        # print("Before:")
+        # print(f"Incomplete tuples: {incomplete_tuples}")
+        # print(f"Complete tuples: {complete_tuples}")
+        # print(f"Greedy order: {greedy_order}")
 
         max_value = get_highest_score_node(incomplete_tuples_score, complete_tuples)
-        print(f"Max value: {max_value}")
+        # print(f"Max value: {max_value}")
 
         if max_value in incomplete_tuples:
             gain_for_element = calculate_gain(
@@ -523,11 +510,11 @@ def calculate_order_by_greedy(
             )
             greedy_order.append(max_value)
 
-        print("After:")
-        print(f"Incomplete tuples: {incomplete_tuples}")
-        print(f"Complete tuples: {complete_tuples}")
-        print(f"Greedy order: {greedy_order}")
-        print("-" * 50)
+        # print("After:")
+        # print(f"Incomplete tuples: {incomplete_tuples}")
+        # print(f"Complete tuples: {complete_tuples}")
+        # print(f"Greedy order: {greedy_order}")
+        # print("-" * 50)
 
     return greedy_order, incomplete_tuples_score
 
@@ -580,7 +567,7 @@ def impute_missing_values(
             complete.append(row)
             com_ind.append(i + 1)
 
-    print(dataset_array)
+    # print(dataset_array)
 
     # Create dictionaries mapping indices to complete and incomplete rows
     dict_complete = dict(zip(com_ind, complete))
@@ -675,7 +662,7 @@ def main(
     calculate_csv: bool = True,
     calculate_median: bool = True,
     draw: bool = False,
-    index_column_name: str = "ID",
+    index_column_name: str = None,
 ) -> pd.DataFrame:
     """
     Main function to handle the overall process.
@@ -688,6 +675,11 @@ def main(
             calculate_median (bool): A flag to determine whether to calculate median.
             index_column_name (str): The name of the index column.
     """
+    if not index_column_name:
+        index_column_name = "ID"
+        data_df[index_column_name] = data_df.index + 1
+        data_df.columns = data_df.columns.astype(str)
+
 
     if calculate_csv:
         scaler = MinMaxScaler()
@@ -711,7 +703,7 @@ def main(
         distance_df = distance_df.round(3)
 
         df = convert_similarity_matrix_to_csv(
-            distance_df, dataset_sim_path, data_df, index_column_name
+            distance_df, None, data_df, index_column_name
         )
 
     else:
@@ -732,7 +724,7 @@ def main(
         # Used in PDF
         threshold = 0.785
 
-    print("Median of all values in the DataFrame:", threshold)
+    # print("Median of all values in the DataFrame:", threshold)
 
     df[index_column_name] = df.index + 1
     df.set_index(index_column_name, inplace=True)
@@ -819,7 +811,7 @@ def main(
 
     # P-value:
     p_value = calculate_p_value(incomplete_tuples, node_data_dict)
-    print(f"P values is: {p_value}")
+    # print(f"P values is: {p_value}")
 
     length_dict = get_associated_values_length(incomplete_tuples, similarity_dict)
 
@@ -827,14 +819,14 @@ def main(
     scores_dict = calculate_node_weights(
         similarity_dict, length_dict, incomplete_tuples, p_value
     )
-    print("Initial Node weight before Imputation Order calc:\n", scores_dict)
+    # print("Initial Node weight before Imputation Order calc:\n", scores_dict)
 
     # Incomplete connections and similarities
     data_dict_inc, incomplete_values_dict = create_incomplete_connection_dicts(
         inc_incomplete, incomplete_tuples
     )
-    print("Incomplete neighbours to incomplete tuples:\n", data_dict_inc)
-    print("Incomplete neighbours similarity Score:\n", incomplete_values_dict)
+    # print("Incomplete neighbours to incomplete tuples:\n", data_dict_inc)
+    # print("Incomplete neighbours similarity Score:\n", incomplete_values_dict)
 
     (
         data_final_scores,

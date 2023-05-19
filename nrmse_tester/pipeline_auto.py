@@ -1,15 +1,19 @@
 from generator import generate_missing_datasets, _input
-from knnimputer import impute_missing_data
 from nrmse_calculator import evaluate_imputations
 from tqdm import tqdm
-from iviaclr import iviaclr
 from multiprocessing import Pool
+import sys
+
+import knnimputer 
+import iviaclr
+sys.path.insert(1, '../clustering/order-sensitive-imputation')
+import ordered_imputation
 
 import csv
 
 
 # Constants
-IMPUTATION_FUNCTION = impute_missing_data
+IMPUTATION_FUNCTION = iviaclr.iviaclr
 INPUT_FILE = '../dataset/cleaned_csv_file_500.csv'
 OUTPUT_FILE = 'output.csv'
 HAS_HEADER = True
@@ -27,6 +31,7 @@ def evaluation_pipeline(imputation_function, input_file, output_file, has_header
 
     combinations = [(imputation_function, input_data, fraction, mechanism, num_tries, p_obs, proportion, subsample)
                     for fraction in fractions for mechanism in mechanisms]
+    
     pool = Pool(processes=processes)
 
     # Evaluate each combination of percentage and mechanism\
